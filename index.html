@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    <canvas id="noiseCanvas" width="1024" height="1024"></canvas>
+    <textarea id="fragmentExtraCode" cols="100" rows="35">
+        vec2 hash22(vec2 p)
+        {
+            p = vec2( dot(p,vec2(127.1,311.7)),
+                      dot(p,vec2(269.5,183.3)));
+
+            return -1.0 + 2.0 * fract(sin(p)*43758.5453123);
+        }
+
+        float noise(vec2 p)
+        {
+            vec2 pi = floor(p);
+            vec2 pf = p - pi;
+            vec2 w = pf * pf * (3.0 - 2.0 * pf);
+
+            return mix(mix( dot(hash22(pi + vec2(0.0, 0.0)), pf - vec2(0.0, 0.0)),
+                            dot(hash22(pi + vec2(1.0, 0.0)), pf - vec2(1.0, 0.0)), w.x),
+                       mix(dot(hash22(pi + vec2(0.0, 1.0)), pf - vec2(0.0, 1.0)),
+                           dot(hash22(pi + vec2(1.0, 1.0)), pf - vec2(1.0, 1.0)), w.x),
+                    w.y);
+        }
+        float noise_sum(vec2 p)
+        {
+            float f = 0.0;
+            p = p * 4.0;
+            f += 1.0000 * noise(p); p = 2.0 * p;
+            f += 0.5000 * noise(p); p = 2.0 * p;
+            f += 0.2500 * noise(p); p = 2.0 * p;
+            f += 0.1250 * noise(p); p = 2.0 * p;
+            f += 0.0625 * noise(p); p = 2.0 * p;
+
+           return f;
+        }
+
+        vec4 getColor(vec2 uv)
+        {
+            float f = noise_sum(uv * 8.0);
+            f = f * 0.5 + 0.5;
+            return vec4(f, f, f, 1);
+        }
+    </textarea>
+    <p/>
+    <button onclick="UpdateFragment()">更新</button>
+    <script>
+        var vertexCode = "" +
+                        "attribute vec4 vTexcoord;\n" +
+                        "varying vec2 v_uv;\n" +
+                        "void main() {\n" +
+                        "gl_Position = vTexcoord;\n" +
+                        "v_uv = vTexcoord.xy * 0.5 + 0.5;\n" +
+                        "}\n" +
+                        "";
+
+        var noiseCanvas = document.getElementById("noiseCanvas");
+
+        var webgl = noiseCanvas.getContext("webgl");
+
+        var program = null;
+
+        var vertexData = [-1, -1, 1, 1,
+            1, -1, 1, 1,
+            -1, 1, 1, 1,
+            1, 1, 1, 1];
+
+        var indexData = [0, 1, 2, 1, 3, 2];
+
+        var vertexBuffer = webgl.createBuffer();
+        webgl.bindBuffer(webgl.ARRAY_BUFFER, vertexBuffer);
+        webgl.bufferData(webgl.ARRAY_BUFFER, new Float32Array(vertexData), webgl.STATIC_DRAW);
+
+        var elementBuffer = webgl.createBuffer();
+        webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, elementBuffer);
+        webgl.bufferData(webgl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexData), webgl.STATIC_DRAW);
+
+
+        function getShader(shaderCode, type)
+        {
+            var shader = webgl.createShader(type);
+            if (!shader)
+                return null;
+            webgl.shaderSource(shader, shaderCode);
+            webgl.compileShader(shader);
+
+            if (!webgl.getShaderParameter(shader, webgl.COMPILE_STATUS))
+            {
+                var log = webgl.getShaderInfoLog(shader);
+                console.log("debug log:\n" + log);
+                return null;
+            }
+            return shader;
+        }
+
+        function getShaderProgram(vertexCode, fragmentCode) {
+            var vertexShader = getShader(vertexCode, webgl.VERTEX_SHADER);
+            var fragmentShader = getShader(fragmentCode, webgl.FRAGMENT_SHADER);
+
+            var program = webgl.createProgram();
+            webgl.attachShader(program, vertexShader);
+            webgl.attachShader(program, fragmentShader);
+
+            webgl.linkProgram(program);
+
+            if (!webgl.getProgramParameter(program, webgl.LINK_STATUS)) {
+                console.log("error program: " + webgl.getProgramInfoLog(program));
+            }
+
+            return program;
+        }
+
+        function clearProgram()
+        {
+            var shaderList = webgl.getAttachedShaders(program);
+            for(var i = 0; i < shaderList.length; i++)
+            {
+                webgl.detachShader(program, shaderList[i])
+                webgl.deleteShader(shaderList[i]);
+            }
+            webgl.deleteProgram(program);
+            program = null;
+        }
+
+        function resetProgram()
+        {
+            var newFragmentCode = "" +
+                    "precision mediump float;\n" +
+                    "varying vec2 v_uv;\n" +
+                    document.getElementById("fragmentExtraCode").value +
+                    "void main() {\n" +
+                    "gl_FragColor = getColor(v_uv * 0.5 + 0.5);\n" +
+                    "}\n" +
+                    "";
+
+            program = getShaderProgram(vertexCode, newFragmentCode);
+
+            var vertexAttribute = webgl.getAttribLocation(program, "vTexcoord");
+            webgl.enableVertexAttribArray(vertexAttribute);
+            webgl.vertexAttribPointer(vertexAttribute, 4, webgl.FLOAT, false, 0, 0);
+
+            webgl.useProgram(program);
+        }
+
+        function UpdateFragment()
+        {
+            clearProgram();
+            resetProgram();
+        }
+
+
+        function Tick()
+        {
+            requestAnimationFrame(Tick);
+
+            webgl.clear(webgl.COLOR_BUFFER_BIT | webgl.DEPTH_BUFFER_BIT);
+
+            webgl.drawElements(webgl.TRIANGLES,6,webgl.UNSIGNED_SHORT,0);
+        }
+
+        resetProgram();
+        Tick();
+
+    </script>
+</body>
+</html>
